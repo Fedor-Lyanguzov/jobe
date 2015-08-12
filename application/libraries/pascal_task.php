@@ -31,16 +31,17 @@ class Pascal_Task extends Task {
         $execFileName = "$src.exe";
         $compileargs = $this->getParam('compileargs');
 //        $cmd = "gcc " . implode(' ', $compileargs) . " -o $execFileName $src -lm 2>$errorFileName";
-        $cmd = "fpc " . implode(' ', $compileargs) . " -o$execFileName $src -Fe$errorFileName " //| grep -e ' Warning:\| Error:\| Fatal:' > $errorFileName ";
+        $cmd = "fpc " . implode(' ', $compileargs) . " -o$execFileName $src -Fe$errorFileName ";
 	// -Fe[filename] - store error log in file
         exec($cmd, $output, $returnVar);
+//	Getting not only errors, but warnings too
+	exec("grep ' Warning:\| Error:\| Fatal:' $errorFileName ", $errors, $r1);
         if ($returnVar == 0) {
-//            $this->cmpinfo = file_get_contents($errorFileName);
-            $this->cmpinfo = '';
+            $this->cmpinfo = implode("\n", $errors);
             $this->executableFileName = $execFileName;
         }
         else {
-            $this->cmpinfo = file_get_contents($errorFileName);
+            $this->cmpinfo = implode("\n", $errors);
         }
     }
 
