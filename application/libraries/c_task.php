@@ -23,8 +23,8 @@ class C_Task extends Task {
             '-x c');
     }
 
-    public static function getVersion() {
-        return 'gcc-4.6.3';
+    public static function getVersionCommand() {
+        return array('gcc --version', '/gcc \(.*\) ([0-9.]*) /');
     }
 
     public function compile() {
@@ -32,7 +32,8 @@ class C_Task extends Task {
         $errorFileName = "$src.err";
         $execFileName = "$src.exe";
         $compileargs = $this->getParam('compileargs');
-        $cmd = "gcc " . implode(' ', $compileargs) . " -o $execFileName $src -lm 2>$errorFileName";
+        $linkargs = $this->getParam('linkargs');
+        $cmd = "gcc " . implode(' ', $compileargs) . " -o $execFileName $src " . implode(' ', $linkargs) . " 2>$errorFileName";
         exec($cmd, $output, $returnVar);
         if ($returnVar == 0) {
             $this->cmpinfo = '';
@@ -47,14 +48,14 @@ class C_Task extends Task {
     public function defaultFileName($sourcecode) {
         return 'prog.c';
     }
-    
-    
+
+
     // The executable is the output from the compilation
     public function getExecutablePath() {
         return "./" . $this->executableFileName;
     }
-    
-    
+
+
     public function getTargetFile() {
         return '';
     }

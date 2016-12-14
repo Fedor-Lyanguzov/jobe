@@ -2,7 +2,7 @@
 
 /* ==============================================================
  *
- * Octabe
+ * Java
  *
  * ==============================================================
  *
@@ -14,9 +14,8 @@ require_once('application/libraries/LanguageTask.php');
 
 class Java_Task extends Task {
     public function __construct($source, $filename, $input, $params) {
-        // TODO: find out why java won't work with memory limit set to
-        // more plausible values.
-        $params['memorylimit'] = 0;
+        $params['memorylimit'] = 2500; // 2.5GB - JVM is greedy!
+        $params['numprocs'] = 256;     // And Java 8 wants lots of processes
         Task::__construct($source, $filename, $input, $params);
         $this->default_params['interpreterargs'] = array(
              "-Xrs",   //  reduces usage signals by java, because that generates debug
@@ -30,8 +29,8 @@ class Java_Task extends Task {
         $this->mainClassName = substr($this->sourceFileName, 0, $extStart);
     }
 
-    public static function getVersion() {
-        return 'Java 1.7';
+    public static function getVersionCommand() {
+        return array('java -version', '/openjdk version "([0-9._]*)"/');
     }
 
     public function compile() {
@@ -53,7 +52,7 @@ class Java_Task extends Task {
         $main = $this->getMainClass($sourcecode);
         if ($main === FALSE) {
             $this->cmpinfo .= "WARNING: can't determine main class, so source file has been named 'prog.java', which probably won't compile.";
-            return 'prog.java'; // This will probably fail            
+            return 'prog.java'; // This will probably fail
         } else {
             return $main.'.java';
         }
@@ -62,9 +61,9 @@ class Java_Task extends Task {
     public function getExecutablePath() {
         return '/usr/bin/java';
     }
-    
-    
-     
+
+
+
     public function getTargetFile() {
         return $this->mainClassName;
     }
@@ -85,7 +84,7 @@ class Java_Task extends Task {
         }
     }
 
-    // Get rid of the tab characters at the start of indented lines in 
+    // Get rid of the tab characters at the start of indented lines in
     // traceback output.
     public function filteredStderr() {
         return str_replace("\n\t", "\n        ", $this->stderr);

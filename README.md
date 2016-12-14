@@ -1,6 +1,6 @@
 # JOBE
 
-Version: 1.3 August 2015
+Version: 1.3.3 July 2016
 
 Author: Richard Lobb, University of Canterbury, New Zealand
 
@@ -84,17 +84,18 @@ Semaphone and shared-memory functions enabled
 The Python3 and the C development system must also be
 installed.
 
-On Ubuntu-14:04, a script to set up all the necessary web tools plus
+On Ubuntu-16.04, a script to set up all the necessary web tools plus
 all currently-supported languages is the following
 (all commands as root):
 
-    apt-get install php5 libapache2-mod-php5 php5-mcrypt mysql-server\
-          libapache2-mod-auth-mysql php5-mysql php5-cli octave nodejs\
-          git python3 build-essential openjdk-7-jre openjdk-7-jdk python3-pip
-    pip3 install pylint
+    apt-get install php libapache2-mod-php php-mcrypt mysql-server\
+          php-mysql php-cli octave nodejs\
+          git python3 build-essential openjdk-8-jre openjdk-8-jdk python3-pip\
+          fp-compiler pylint3
     pylint --reports=no --generate-rcfile > /etc/pylintrc
 
-[pylint is strictly optional].
+[octave, fp and pylint3 are required only if you need to run Octave or Pascal
+programs or test Python programs with pylint, respectively.].
 
 Similar commands should work on other Debian-based Linux distributions,
 although some differences are inevitable.
@@ -209,29 +210,20 @@ the form
 
 To set up Jobe to run in this way, proceed as follows:
 
+ 1. Install a mysql server on the jobe machine or elsewhere.
+
+ 1. Create a database called *jobe* and define a user with full access to it.
+
+ 1. Edit *application/config/database.php* to access your mysql server and
+    the jobe database with the user credentials you defined in the previous
+    step.
+
  1. Edit the file *application/config/rest.php* and set the configuration
     parameter *rest_enable_keys* to 1.
 
- 1. Install a mysql server on the jobe machine or elsewhere.
-
- 1. Create a database called *jobe*
-
- 1. In the *jobe* database create a table *keys* with the mysql command
-
-    CREATE TABLE  `keys` (
-     `id` INT( 11 ) NOT NULL AUTO_INCREMENT,
-     `key` VARCHAR( 40 ) NOT NULL,
-     `level` INT( 2 ) NOT NULL,
-     `ignore_limits` TINYINT( 1 ) NOT NULL DEFAULT  '0',
-     `date_created` INT( 11 ) NOT NULL,
-    PRIMARY KEY (  `id` )
-    ) ENGINE = INNODB DEFAULT CHARSET = utf8;
-
-    Populate the table with any keys you wish to issue to clients.
-    *level* will normally be 0.
-
- 1. Edit *application/config/database.php* to access your mysql server and
-    the jobe database.
+ 1. Set up tables `keys` and `limits` as explained in *rest.php*. Populate
+    the `keys` table with one or more API keys, which must then be used by
+    any requests to the Jobe server.
 
 If running in API-Key mode, you should still firewall the Jobe server to
 prevent it opening any sockets to other machines.
@@ -294,7 +286,11 @@ this is exceeded the *fork* system call will fail with, again, somewhat
 unpredictable outcomes.
  1. compileargs ([]): a list of string option values to pass to the compiler,
 such as ["-Wall", "-std=c99"] for the C compiler. Meaningful only for compiled
-languages.
+languages. These arguments precede the name of the file to be compiled.
+ 1. linkargs ([]): a list of string option values to pass to the compiler,
+such as ["-lm"] for the C compiler. These arguments follow the name of the file
+to be compiled. Meaningful only for some compiled
+languages, notably C and C++.
  1. interpreterargs ([]): a list of string option values to pass to the 
 language interpreter or Java VM etc when the program is executed. Meaningful
 only for languages like Python, PHP and Java where the output from the compiler
@@ -453,6 +449,21 @@ Fixed issue with runguard that prevented use of pthreads library in C programs.,
 Pascal support added by Fedor Lyanguzov (thanks Fedor)
 
 Good luck!
+
+### Version 1.3.1
+
+Minor patches to ensure PHP7 compability. Install instruction in readme.md
+still relate to PHP5, however.
+
+### Version 1.3.2
+
+Change Java config parameters to allow Java 8 to run (more memory and
+more processes).
+
+### Version 1.3.3
+
+Remove inline declaration of readoptarg in runguard.c (causing compile errors
+with most recent gcc versions). Documentation tweaks.
 
 Richard
 

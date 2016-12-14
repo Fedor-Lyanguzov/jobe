@@ -1,9 +1,25 @@
+#! /usr/bin/env python3
 ''' A tester and demo program for jobe
     Richard Lobb
     2/2/2015
+
     Modified 6/8/2015 to include --verbose command line parameter, to do
     better file upload and pylint testing and to improve error messages
     in some cases.
+
+    Modified 7/11/2016 by Tim Hunt. Allow selection of languages to run
+    from the command line, and use a non-zero exit code (number of
+    failures + number of exceptions) if not all tests pass.
+
+    Usage:
+    To run all tests:
+        ./testsubmit.py
+    or
+        ./testsubmit.py --verbose
+
+    To run selected tests by language:
+        ./testsubmit.py python3 octave --verbose
+    (Use of --verbose is optional here.)
 '''
 
 from urllib.request import urlopen
@@ -29,13 +45,17 @@ DEBUGGING = False
 # If Jobe expects an X-API-Key header, set API_KEY to a working value and set
 # USE_API_KEY to True.
 API_KEY = '2AAA7A5415B4A9B394B54BF1D2E9D'  # A working (100/hr) key on Jobe2
+
 USE_API_KEY = True
 JOBE_SERVER = 'localhost'
+
 #JOBE_SERVER = 'jobe2.cosc.canterbury.ac.nz'
 
-# Set the next line to a specific value, e.g. 'octave' to restrict to testing
-# just one language. Use 'ALL' to test all languages.
-TEST_LANG = 'ALL'
+# The next constant controls the maximum number of parallel submissions to
+# throw at Jobe at once. Numbers less than or equal to the number of Jobe
+# users (currently 10) should be safe. Larger numbers might cause
+# Overload responses.
+NUM_PARALLEL_SUBMITS = 10
 
 GOOD_TEST = 0
 FAIL_TEST = 1
@@ -182,7 +202,7 @@ def check_code(s):
 
     lines = result.strip().split('\\n')
     for line in lines:
-        if not line.startswith('Warning: option'):
+        if line.strip() and not line.startswith('Warning: option'):
             print(line)
             return False
 
@@ -582,6 +602,36 @@ public class Test {
     'expect': { 'outcome': 11 }
 },
 
+{
+    'comment': 'Java program with a support class (.java)',
+    'language_id': 'java',
+    'sourcecode': r"""
+// A Java program with a support class
+public class Blah {
+    public static void main(String[] args) {
+        Thing thing = new Thing("Farewell cruel world");
+        thing.printme();
+    }
+}
+""",
+    'files': [
+        ('randomid0379799', """public class Thing {
+    private String message;
+    public Thing(String message) {
+        this.message = message;
+    }
+    public void printme() {
+        System.out.println(message);
+    }
+}
+""")
+    ],
+    'file_list': [('randomid0379799', 'Thing.java')],
+    'parameters': {'cputime':10},
+    'expect': { 'outcome': 15, 'stdout': '''Farewell cruel world
+'''}
+},
+
 #================= C++ tests ======================
 {
     'comment': 'Test good C++ hello world',
@@ -643,12 +693,7 @@ end.
 def check_parallel_submissions():
     '''Check that we can submit several jobs at once to Jobe with
        the process limit set to 1 and still have no conflicts.
-
-       NUM_SUBMITS temporarily reduced 6/8/2015 to avoid occasional 
-       errors (yet to be investigated, although even with NUM_SUBMITS = 10
-       it's a fairly brutal test).
     '''
-    NUM_SUBMITS = 10
 
     job = {
         'comment': 'C program to check parallel submissions',
@@ -667,7 +712,7 @@ int main() {
 
     threads = []
     print("\nChecking parallel submissions")
-    for child_num in range(NUM_SUBMITS):
+    for child_num in range(NUM_PARALLEL_SUBMITS):
         print("Doing child", child_num)
         def run_job():
             this_job = copy.deepcopy(job)
@@ -744,14 +789,13 @@ def put_file(file_desc):
     headers = {"Content-type": "application/json",
                "Accept": "text/plain"}
     connect = http_request('PUT', resource, data, headers)
-    if VERBOSE:
-        response = connect.getresponse()
+    response = connect.getresponse()
+    if VERBOSE or response.status != 204:
         print("Response to putting", file_id, ':')
         content = ''
         if response.status != 204:
             content =  response.read(4096)
         print(response.status, response.reason, content)
-
     connect.close()
 
 
@@ -841,7 +885,8 @@ def display_result(comment, ro):
         15: 'Successful run',
         17: 'Memory limit exceeded',
         19: 'Illegal system call',
-        20: 'Internal error, please report'}
+        20: 'Internal error, please report',
+        21: 'Server overload. Excessive parallelism?'}
 
     code = ro['outcome']
     print("{}".format(outcomes[code]))
@@ -868,11 +913,17 @@ def display_result(comment, ro):
 def main():
     '''Every home should have one'''
     global VERBOSE
-    if '--verbose' in sys.argv:
+    langs_to_run = set(sys.argv[1:]) # Get rid of the program name
+    if '--verbose' in langs_to_run:
         VERBOSE = True
+        langs_to_run.remove('--verbose')
+    if len(langs_to_run) == 0:
+        langs_to_run = set([testcase['language_id'] for testcase in TEST_SET])
     counters = [0, 0, 0]  # Passes, fails, exceptions
+    tests_run = 0;
     for test in TEST_SET:
-        if TEST_LANG == 'ALL' or test['language_id'] == TEST_LANG:
+        if test['language_id'] in langs_to_run:
+            tests_run += 1
             result = run_test(test)
             counters[result] += 1
             if VERBOSE:
@@ -880,11 +931,14 @@ def main():
 
     print()
     print("{} tests, {} passed, {} failed, {} exceptions".format(
-        len(TEST_SET), counters[0], counters[1], counters[2]))
+        tests_run, counters[0], counters[1], counters[2]))
 
-    if TEST_LANG == 'ALL':
+    if 'c' in langs_to_run:
         check_parallel_submissions()
 
+    return counters[1] + counters[2]
 
-main()
+
+sys.exit(main())
+
 
