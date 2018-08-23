@@ -44,7 +44,7 @@
 #include "runguard-config.h"
 
 /* For chroot(), which is not POSIX. */
-#define _BSD_SOURCE
+#define _DEFAULT_SOURCE
 /* For unshare(), only used when cgroups are enabled */
 #if ( USE_CGROUPS == 1 )
 #define _GNU_SOURCE
@@ -522,16 +522,30 @@ long readoptarg(const char *desc, long minval, long maxval)
 
 void setrestrictions()
 {
-	char *path;
+        char* savedEnvironmentVariables[] = {"PATH", "LANG", "LC_ALL", "LC_COLLATE",
+            "LC_CTYPE", "LC_MESSAGES", "LC_MONETARY", "LC_NUMERIC", "LC_TIME"};
+        char* savedValues[sizeof(savedEnvironmentVariables) / sizeof(char*)];
+        int numSavedVariables = sizeof(savedEnvironmentVariables) / sizeof(char*);
 	char  cwd[PATH_MAX+1];
+        char* path = NULL;
+        int i;
 
 	struct rlimit lim;
 
 	/* Clear environment to prevent all kinds of security holes, save PATH */
-	path = getenv("PATH");
+        /* RJL: Changed to save and restore all standard locale variables */
+	//path = getenv("PATH");
+        for (i = 0; i < numSavedVariables; i++) {
+            savedValues[i] = getenv(savedEnvironmentVariables[i]);
+        }
 	environ[0] = NULL;
 	/* FIXME: Clean path before setting it again? */
-	if ( path!=NULL ) setenv("PATH",path,1);
+	//if ( path!=NULL ) setenv("PATH",path,1);
+        for (i = 0; i < numSavedVariables; i++) {
+            if (savedValues[i] != NULL) {
+                setenv(savedEnvironmentVariables[i], savedValues[i], 1);
+            }
+        }
 
 	/* Set resource limits: must be root to raise hard limits.
 	   Note that limits can thus be raised from the systems defaults! */
@@ -627,6 +641,8 @@ void setrestrictions()
 	if ( use_group ) {
 		if ( setgid(rungid) ) error(errno,"cannot set group ID to `%d'",rungid);
 		verbose("using group ID `%d'",rungid);
+                gid_t aux_groups[] = {rungid};
+                if (setgroups(1, aux_groups)) error(errno, "cannot clear auxiliary groups");
 	}
 	/* Set user-id (must be root for this). */
 	if ( use_user ) {
@@ -641,6 +657,7 @@ void setrestrictions()
 		if ( setuid(getuid()) ) error(errno,"cannot reset real user ID");
 		verbose("reset user ID to `%d' for command",getuid());
 	}
+
 	if ( geteuid()==0 || getuid()==0 ) error(0,"root privileges not dropped. Do not run judgedaemon as root.");
 }
 
@@ -674,7 +691,7 @@ int main(int argc, char **argv)
 	be_verbose = be_quiet = 0;
 	show_help = show_version = 0;
 	opterr = 0;
-	while ( (opt = getopt_long(argc,argv,"+r:u:g:t:C:m:f:p:P:co:e:s:E:T:vq",long_opts,(int *) 0))!=-1 ) {
+	while ( (opt = getopt_long(argc,argv,"+r:u:g:t:C:m:f:p:P:c:o:e:s:E:T:v:q",long_opts,(int *) 0))!=-1 ) {
 		switch ( opt ) {
 		case 0:   /* long-only option */
 			break;

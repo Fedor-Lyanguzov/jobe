@@ -1,71 +1,80 @@
 # JOBE
 
-Version: 1.3.3 July 2016
+Version: 1.4.4, 25 June 2018
+
 
 Author: Richard Lobb, University of Canterbury, New Zealand
 
-Contributors: Fedor Lyanguzov
+Contributors: Tim Hunt, Fedor Lyanguzov, Kai-Cheung Leung
 
 ## Introduction
 
 Jobe (short for Job Engine) is a server that supports running of small
 compile-and-run jobs in a variety of programming languages. It was
 developed as a remote sandbox for use by
-[CodeRunner](http://github.com/trampgeek/coderunner), 
+[CodeRunner](http://github.com/trampgeek/coderunner),
 a Moodle question-type plugin that asks students to write code to some
 relatively simple specification. However, Jobe servers could be useful in
 a variety of other contexts, particularly in education.
 
 A job specifies a programming language, the source code, the standard input
 to the run and an optional list of additional files. Jobe compiles the
-source code (if compilation is appropriate in the specified language) and 
+source code (if compilation is appropriate in the specified language) and
 runs it with the given input data. It returns a run_result object containing
 various status information plus the output and error output from the run.
 
 The interface is via a RESTful API, that is documented [here](./restapi.pdf).
 
+The languages C, C++, Python3, Python2,
+Octave, Java, Pascal and PHP are all built-in. Other languages can be added
+fairly easily although if using Jobe from CodeRunner it is usually even
+easier to write a Python-based question type that scripts the execution of
+the required language. See the
+[CodeRunner documentation](http://coderunner.org.nz/mod/book/view.php?id=193&chapterid=749)
+for an example.
+
+The Computer Science quiz server at the University of Canterbury switched to
+exclusive use of the Jobe sandbox in early July 2014. Since then
+it has run many hundreds of thousands of Python3, C, Java and Octave jobs unattended
+with only a few minor bug fixes and security refinements.
+
 ## Implementation status
 
 The current version of Jobe (Version 1.3) implements
-enough of the API to provide the services needed by CodeRunner. Only 
+a subset of the documented API, sufficient for use by CodeRunner. Only
 immediate-mode runs are supported, with run results being returned with the
 response to the POST of the run requests. Run results are not retained by
-the server (unless *run\_spec.debug* is true; see the API), so 
-*get\_run\_status* always returns 404 not found.  C, Python3, Python2, Octave
-and Java have been
-tested at this stage, and untested code exists to support C++ and Matlab.
+the server (unless *run\_spec.debug* is true; see the API), so
+*get\_run\_status* always returns 404 not found.
 
 File PUTs are supported but not POSTs. When used by CodeRunner, file IDs are
 MD5 checksums of the file contents.
 
-The Computer Science quiz server at the University of Canterbury switched to
-exclusive use of the Jobe sandbox in early July 2014. In the year since then
-it has run many tens of thousands of Python3, C and Octave jobs unattended
-with only a few minor early bug fixes.
-
-Sandboxing is fairly basic. It uses the [domjudge](http://domjudge.org) 
+Sandboxing is fairly basic. It uses the [domjudge](http://domjudge.org)
 *runguard* program to run student jobs with restrictions on resource
 allocation (memory, processes, cpu time) as a low-privileged user.
-However it does not restrict any system calls and the task is not yet run
+However it does not restrict any system calls and the task is not run
 in a chroot jail.
 
 Programs may write binary output but the results are returned to the caller
 JSON-encoded, which requires UTF-8 strings. To avoid crashing the
 json-encoder, the standard output and standard error output from the program
-are taken as 8-bit character streams; characters below '\x20' (the space
-character) and above '\x7E' are replaced by C-style hexadecimal encodings 
+are checked to see if they're valid utf-8. If so, they're returned unchanged.
+Otherwise, they're taken as 8-bit character streams; characters below '\x20' (the space
+character) and above '\x7E' are replaced by C-style hexadecimal encodings
 (e.g. '\x8E') except for newlines which are passed through directly, and
 tabls and returns which are replaced with '\t' and '\r' respectively.
-Also, the Runguard sandbox currently runs programs in the default C locale. 
-As a consequence of these two constraints, programs that generate utf-8 output
-cannot currently be run on Jobe. It is hoped to improve on this in the future.
+
+If Jobe is to correctly handle utf-8 output from programs, the Apache LANG
+environment variable must be set to a UTF-8 compatible value. See
+the section *Setting the locale* below.
 
 Jobe is implemented using Ellis Lab's [codeigniter](http://codeigniter.com) plus the
 [RESTserver plugin](https://github.com/chriskacerguis/codeigniter-restserver) originally
 written by
 Phil Sturgeon and now maintained by Chris Kacerguis. Jobe uses Jaap Eldering's
 and Keith Johnson's *Runguard*
-module from the programming contest server (DOMJudge)[http://domjudge.org] 
+module from the programming contest server (DOMJudge)[http://domjudge.org]
 as a sandbox to limit resource use by submitted jobs.
 
 ## Installation
@@ -77,36 +86,81 @@ and do not control access with API keys (see later),
 anyone will be able to connect to your machine and run their own code
 on it! **CAVEAT EMPTOR!**
 
+NOTE: a video walkthrough of the process of setting up a Jobe server
+on a DigitalOcean droplet is [here](https://www.youtube.com/watch?v=dGpnQpLnERw).
+
+Installation on Ubuntu 16.04 systems should be
+straightforward but installation on other flavours of Linux or on systems
+with non-standard configurations may require
+Linux administrator skills. A possible alternative approach if things go
+wrong is to try the experimental [JobeInABox](https://hub.docker.com/r/trampgeek/jobeinabox/)
+Docker image, which should be runnable with a single terminal command
+on any Linux system that has
+docker installed. Thanks to David Bowes (UHerts) for most of the work on this.
+Please be aware that it is still experimental and hasn't been used in production
+by the author. Feedback is welcomed.
+
 Jobe runs only on Linux, which must have the Apache web server
 installed and running. PHP must have been compiled with the System V
 Semaphone and shared-memory functions enabled
-(see here)[http://www.php.net/manual/en/sem.setup.php].
+(see here)[http://www.php.net/manual/en/sem.setup.php], but that's the norm.
+Access Control Lists (ACLs) must be enabled; they normally are but if the
+`/home/jobe` directory lands up on a mounted volume, you may need to
+explicitly enable ACLs in the `mount` command or in `/etc/fstab`.
 The Python3 and the C development system must also be
 installed.
 
-On Ubuntu-16.04, a script to set up all the necessary web tools plus
-all currently-supported languages is the following
-(all commands as root):
+### Installing the necessary dependencies
 
-    apt-get install php libapache2-mod-php php-mcrypt mysql-server\
-          php-mysql php-cli octave nodejs\
-          git python3 build-essential openjdk-8-jre openjdk-8-jdk python3-pip\
-          fp-compiler pylint3
-    pylint --reports=no --generate-rcfile > /etc/pylintrc
+On Ubuntu-16.04 or 18.04, a command to set up all the necessary web tools plus
+all currently-supported languages is the following:
 
-[octave, fp and pylint3 are required only if you need to run Octave or Pascal
-programs or test Python programs with pylint, respectively.].
+    sudo apt install apache2 php libapache2-mod-php php-cli\
+        php-mbstring octave nodejs git python3 build-essential openjdk-8-jre\
+        openjdk-8-jdk python3-pip fp-compiler pylint3 acl sudo sqlite3
+
+Octave, fp and pylint are required only if you need to run Octave or Pascal
+programs or test Python programs with pylint, respectively. Newer versions of
+openjdk are available on Ubuntu 18.04, so you may wish to replace the two
+openjdk-8 packages with their openjdk-10 equivalents.
+
+If you wish to use API-authentication, which is generally pointless when setting
+up a private Jobe server, you need to install further dependencies
+as follows. However, **this command does not work on Ubuntu 18.04**
+because the PHP *mcrypt* package is not supported in php 7.2. As a consequence,
+API-key authentication is not currently supported on Ubuntu 18.04.
+
+    sudo apt install mysql-server php-mysql php-mcrypt
 
 Similar commands should work on other Debian-based Linux distributions,
-although some differences are inevitable.
+although some differences are inevitable (e.g.: acl is preinstalled in Ubuntu,
+whereas in debian it must be installed).
 
-The first step is to clone the project in the web root directory WEBROOT
-(usually /var/www on Debian-based systems or /var/www/html on Red Hat).
-Do not clone the project elsewhere and attempt to add it to web root with
+### Setting pylint3 options (if you want pylint)
+
+If you're going to use pylint, you also need to build the /etc/pylintrc file
+to set the default options with one of the following commands, which must be
+run as root (don't just try prefixing the command with sudo, as the output redirection
+will fail).
+
+Firstly try the command:
+
+    pylint3 --reports=no --score=n --generate-rcfile > /etc/pylintrc
+
+If that gives you an error "no such option: --score" (which happens with
+older versions of pylint3), try instead
+
+    pylint3 --reports=no --generate-rcfile > /etc/pylintrc
+
+### Installing Jobe
+
+Clone the Jobe project in the web root directory WEBROOT
+(usually /var/www/html).
+Do not clone it elsewhere and attempt to add it to web root with
 symbolic links. That breaks this installer. In what follows, replace
 WEBROOT with either /var/www or /var/www/html as appropriate.
 
-To clone the project:
+To clone Jobe:
 
     cd WEBROOT
     sudo git clone https://github.com/trampgeek/jobe.git
@@ -120,6 +174,50 @@ processes from the run.
     cd WEBROOT/jobe
     sudo ./install
 
+On Centos6 systems (and possibly early Centos7 releases) you should also
+comment out the line
+
+    Defaults requiretty
+
+in /etc/sudoers. This was
+(reported as a bug)[https://bugzilla.redhat.com/show_bug.cgi?id=1196451]
+and was fixed in later RHEL releases.
+
+### Setting the locale
+
+By default, Apache is configured to use the C locale. This means that programs
+generating, say, UTF-8 output will fail with an error
+
+    UnicodeEncodeError: 'ascii' codec can't encode character ...
+
+If you wish to run UTF-8 code (recommended) you should
+find the line in the Apache envvars file (on Ubuntu systems this is to be found
+at /etc/apache2/envvars)
+
+    export LANG=C
+
+and change it to either C.UTF-8 (which changes the charset to UTF-8 but leaves
+other locale settings unchanged) or to the required standard locale value, e.g.
+
+    export LANG=en_NZ.UTF-8
+
+Make sure that whatever locale you use is installed on the Jobe server.
+
+Then restart apache with the command
+
+    sudo service apache2 restart
+
+Note:
+
+1. The comment in the Apache envvars file suggesting the use of the default
+locale probably won't
+work, as this will also just give you ASCII text.
+
+2. To take advantage of the UTF-8 capabilities in CodeRunner you will need
+to use Version 3.3 or later.
+
+## Testing the install
+
 To test the installation, first try running the tester with the command
 
     python3 testsubmit.py
@@ -131,6 +229,14 @@ any client machine that is allowed to access the jobe server, edit the line
 
 to reference the JOBE_SERVER, e.g. by replacing *localhost* with its IP
 number, and re-run the tester with the same command from the client machine.
+
+## Updating Jobe
+
+If you wish to update an existing version of Jobe to a new one, simply `cd`
+into the Jobe directory, do a `git pull` to update the code, then rerun the
+installer as before, i.e.
+
+    sudo ./install
 
 ## Debugging
 
@@ -166,15 +272,58 @@ If the install appears OK but testsubmit.py fails:
     from the framework; look for lines beginning *jobe*. These are all issued
     by restapi.php in application/controllers, which is the top level handler
     for all http requests.
+ 1. If you are getting Overloaded errors, then you can display the in-memory
+    locks on the Jobe users with this PHP one-liner:
+    ```php -r 'print_r(shm_get_var(shm_attach(ftok
+      ("/var/www/html/jobe/application/libraries/LanguageTask.php", "j")), 1));'
 
 If you still can't figure it out, email me (Richard Lobb; my gmail name is
 trampgeek).
+
+## An optional extra installation step
+
+[For paranoid sysadmins only].
+
+Submitted jobs can generally write files only into the temporary directory
+created for their run within the '/home/jobe/runs'
+directory. Exceptions to this rule are the /tmp, /var/tmp, /var/crash and
+/run/lock directories all of which
+conventionally can be written into by any Linux process.
+
+The temporary working directory and any files in the writable directories
+mentioned above are deleted on the termination of the run. However, depending on
+the size of the various partitions and
+the allowed maximum run time, it might in principle be
+possible for a rogue process, or a deliberate attacker, to run the system
+out of disk space in a particular partition (probably /tmp, which is usually
+relatively small),
+before the job terminates. That could in turn impact upon other jobs in
+progress.
+
+This possibility is considered very remote under normal circumstances. With typical
+run times of a few seconds, jobs
+time out long before they can fill up a main partition such as that housing
+/home/jobe. Filling up /tmp is easier but jobs shouldn't generally be using
+that directory, so a rogue process that fills it up shouldn't affect other users. In
+either case, the space is freed as soon as the job terminates. Certainly this
+is not a problem we have ever observed in
+practice. However, it should be possible to protect against such an outcome by
+setting disk quotas for the users jobe00, jobe01, ... jobe09 [The number
+of such user accounts is defined by the parameter `jobe_max_users` in
+`application/config/config.php`. The default value is 10.]
+Instructions for installing the quota
+management system and setting quotas are given in various places on the web, e.g.
+[here](https://www.digitalocean.com/community/tutorials/how-to-enable-user-and-group-quotas).
+The precise details will vary from system to system according to how the disk
+partitions are set up; quotas should be
+set for all jobe users on whatever partitions contain /home/jobe, /tmp, /var/tmp,
+/var/crash and /run/lock.
 
 ## Securing the site
 
 ### Securing by means of a firewall
 
-By default, Jobe is expected to run on an Intranet server 
+By default, Jobe is expected to run on an Intranet server
 that is firewalled
 to permit access only from specific authorised hosts. In this mode,
 the client is assumed to be trusted and does not need to provide any form of
@@ -194,10 +343,16 @@ following:
     ufw allow in proto tcp to any port 80 from <your_client_ip>
     ufw enable
 
-### Securing with API keys
+In the above, <your\_client\_ip> is the host that is permitted to send jobs
+to Jobe (e.g. a Moodle server with CodeRunner). <some\_useful\_ip> is
+any server to which Jobe might need to connect in order to run/grade
+student code. In the absence of such a server, that line should be omitted.
+
+### Securing with API keys (rarely useful)
 
 If you wish Jobe to serve multiple clients and do not wish to open a
-specific port for each one you should instead configure the rest-server
+specific port for each one you will need to configure the firewall to allow
+incoming connections from anywhere but you should then also configure the rest-server
 to require some form of authentication and authorisation. The various
 ways of achieving this are discussed in the documentation of the
 [rest-server plugin](https://github.com/chriskacerguis/codeigniter-restserver).
@@ -210,7 +365,10 @@ the form
 
 To set up Jobe to run in this way, proceed as follows:
 
- 1. Install a mysql server on the jobe machine or elsewhere.
+ 1. Make sure you installed the additional dependencies for API-key authentication
+    given in the section "Installing the necessary dependencies". You need
+    to be running a PHP version prior to PHP 7.2 (like that on Ubuntu 16.04 for
+    example).
 
  1. Create a database called *jobe* and define a user with full access to it.
 
@@ -236,7 +394,7 @@ setting the *rest_enable_limits* parameter
 in *application/config/rest.php* to non-zero.
 Jobe will then limit the number of requests made
 with any given key to the values set in
-*application/config/per_method_limits.php*. 
+*application/config/per_method_limits.php*.
 
 For this to work, the *jobe* database must contain an additional table *limits*,
 defined with an SQL command like
@@ -291,7 +449,7 @@ languages. These arguments precede the name of the file to be compiled.
 such as ["-lm"] for the C compiler. These arguments follow the name of the file
 to be compiled. Meaningful only for some compiled
 languages, notably C and C++.
- 1. interpreterargs ([]): a list of string option values to pass to the 
+ 1. interpreterargs ([]): a list of string option values to pass to the
 language interpreter or Java VM etc when the program is executed. Meaningful
 only for languages like Python, PHP and Java where the output from the compiler
 is not pure executable machine code.
@@ -300,7 +458,7 @@ program, e.g. to set *argc* and *argv* for a C program. Not generally useful
 from CodeRunner as there is no way to set parameters on a per-test-case basis.
 
 Individual languages will usually set their own default values for *compileargs*
-and *interpreterargs*. 
+and *interpreterargs*.
 
 If any of the above attributes are defined within the run_spec
 *parameters* field, the latter is used and the defaults are ignored.
@@ -315,7 +473,7 @@ An empty default means the global default is used.
 </tr>
   <td>c</td><td>C</td><td>['-Wall', -Werror', '-std=c99', '-x c']</td><td></td>
 <tr>
-  <td>cpp</td><td>C++</td><td>['-Wall', '-Werror', '-x ++']</td><td></td>
+  <td>cpp</td><td>C++</td><td>['-Wall', '-Werror']</td><td></td>
 </tr>
 <tr>
   <td>python2</td><td>Python2</td><td></td><td>['-BESs']</td>
@@ -333,7 +491,7 @@ An empty default means the global default is used.
   <td>octave</td><td>Octave (matlab variant)</td><td></td><td>['--norc', '--no-window-system', '--silent', '-H']</td>
 </tr>
 <tr>
-  <td>php</td><td>PHP5</td><td></td><td>['--no-php-ini']</td>
+  <td>php</td><td>PHP</td><td></td><td>['--no-php-ini']</td>
 </tr>
 <tr>
   <td>pascal</td><td>Free Pascal</td><td>['-vew', '-Se']</td><td></td>
@@ -343,7 +501,7 @@ An empty default means the global default is used.
 ## Configuration
 
 This version of jobe is configured for use by Moodle Coderunner. When using
-Jobe from CodeRunner the 
+Jobe from CodeRunner the
 various language compile and run options can be changed
 via the sandbox Parameters field in the question authoring form (using the
 advanced customisation capabilities) of either the question prototype
@@ -411,7 +569,7 @@ Additionally the subclass may define:
 
 ### Version 1.2
 
-Fixed bug with Java when correct source file name supplied in the request 
+Fixed bug with Java when correct source file name supplied in the request
 (rename of file to itself was failing). Thanks Paul Denny.
 Replaced uses of Moodle coding_exception with generic exception. Again thanks
 Paul Denny.
@@ -464,6 +622,63 @@ more processes).
 
 Remove inline declaration of readoptarg in runguard.c (causing compile errors
 with most recent gcc versions). Documentation tweaks.
+
+### Version 1.3.4
+
+Fix serious security flaw in runguard + my use of it.
+
+### Version 1.3.5
+
+1. Fix broken caching of language versions (wasting time on each submission).
+1. Improve identification of language versions; 'Unknown' is now given as the
+language version if a language get-version command runs but produces output
+in an unexpected format. Formerly such languages were deemed invalid.
+1. Change Java task so supplied memlimit is ignored, leaving JVM to manage its
+own memory.
+1. Add 'getLanguages' to simpletest.py and testsubmit.py.
+
+### Version 1.3.5+ 16 June 2017
+
+ 1. Improve installer to handle installation on servers with less permissive
+    access rights than Ubuntu 16.04.
+ 1. Delete any files created in /tmp, /var/tmp, /run/lock and /var/crash
+    on completion of a run.
+ 1. Limit maximum CPU time for any one Jobe to 30 secs (config constant).
+
+Thanks Kai-Cheung Leung for the first two of those additions.
+
+### Version 1.3.6 21 June 2017
+
+ 1. Minimum PHP version is now required to be 5.5. (This is now checked in the installer.)
+ 1. Compilation of the Student's code is now also done in the runguard sandbox.
+    This provides an additional layer of security.
+
+Thanks Tim Hunt for most of the work in this addition.
+
+### 1.3.6+
+
+ 1. Tune retry count for better performance under overload.
+ 1. Documentation updates
+ 1. Tweak installer for Centos detection of web server
+
+### 1.4.0
+
+  1. Tweaks to allow full utf-8 output to be returned, provided Apache's LANG
+     variable is set to a UTF-8 compatible value.
+
+### 1.4.1
+
+  1. Merged in switch to pylint3/python3 completely (thanks Garth Williamson)
+
+### 1.4.2
+
+  1. Bug fix: Jobe server overload was being incorrectly reported as a Runguard
+     error ("No user jobe-1").
+### 1.4.3
+
+  1. Fix bug in testsubmit.php when used with latest pylint3.
+  1. Document dependency script for Ubuntu 18.04 plus limitations due to missing
+     mcrypt.
 
 Richard
 

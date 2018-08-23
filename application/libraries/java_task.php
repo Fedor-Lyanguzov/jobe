@@ -13,41 +13,48 @@
 require_once('application/libraries/LanguageTask.php');
 
 class Java_Task extends Task {
-    public function __construct($source, $filename, $input, $params) {
-        $params['memorylimit'] = 2500; // 2.5GB - JVM is greedy!
-        $params['numprocs'] = 256;     // And Java 8 wants lots of processes
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        $params['memorylimit'] = 0;    // Disregard memory limit - let JVM manage memory
+        $this->default_params['numprocs'] = 256;     // Java 8 wants lots of processes
         $this->default_params['interpreterargs'] = array(
              "-Xrs",   //  reduces usage signals by java, because that generates debug
                        //  output when program is terminated on timelimit exceeded.
              "-Xss8m",
              "-Xmx200m"
         );
-        // Superclass constructor calls subclasses to get filename if it's
+
+        if (isset($params['numprocs']) && $params['numprocs'] < 256) {
+            $params['numprocs'] = 256;  // Minimum for Java 8 JVM
+        }
+
+        parent::__construct($filename, $input, $params);
+    }
+
+    public function prepare_execution_environment($sourceCode) {
+        parent::prepare_execution_environment($sourceCode);
+
+        // Superclass calls subclasses to get filename if it's
         // not provided, so $this->sourceFileName should now be set correctly.
         $extStart = strpos($this->sourceFileName, '.');  // Start of extension
         $this->mainClassName = substr($this->sourceFileName, 0, $extStart);
     }
 
     public static function getVersionCommand() {
-        return array('java -version', '/openjdk version "([0-9._]*)"/');
+        return array('java -version', '/version "?([0-9._]*)/');
     }
 
     public function compile() {
         $prog = file_get_contents($this->sourceFileName);
         $compileArgs = $this->getParam('compileargs');
-        $cmd = '/usr/bin/javac ' . implode(' ', $compileArgs) . " {$this->sourceFileName} 2>compile.out";
-        exec($cmd, $output, $returnVar);
-        if ($returnVar == 0) {
+        $cmd = '/usr/bin/javac ' . implode(' ', $compileArgs) . " {$this->sourceFileName}";
+        list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
+        if (empty($this->cmpinfo)) {
             $this->executableFileName = $this->sourceFileName;
-        }
-        else {
-            $this->cmpinfo .= file_get_contents('compile.out');
         }
     }
 
     // A default name for Java programs. [Called only if API-call does
-    // not provide a filename]
+    // not provide a filename. As a side effect, also set the mainClassName.
     public function defaultFileName($sourcecode) {
         $main = $this->getMainClass($sourcecode);
         if ($main === FALSE) {
