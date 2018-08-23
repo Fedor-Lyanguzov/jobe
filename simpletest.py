@@ -1,5 +1,7 @@
+#! /usr/bin/env python3
 ''' simpletest.py - a simple demo of how to submit a program
     to Jobe. Demonstrates python3, C++ and Java.
+    Includes a call to get the list of languages.
 '''
 
 from urllib.error import HTTPError
@@ -8,7 +10,8 @@ import http.client
 
 API_KEY = '2AAA7A5415B4A9B394B54BF1D2E9D'  # A working (100/hr) key on Jobe2
 USE_API_KEY = True
-JOBE_SERVER = 'jobe2.cosc.canterbury.ac.nz'
+#JOBE_SERVER = 'jobe2.cosc.canterbury.ac.nz'
+JOBE_SERVER = 'localhost'
 
 PYTHON_CODE = """
 MESSAGE = 'Hello Jobe!'
@@ -62,18 +65,23 @@ def run_test(language, code, filename):
         'sourcecode': code,
     }
 
-    # Prepare the request
-
     resource = '/jobe/index.php/restapi/runs/'
     data = json.dumps({ 'run_spec' : runspec })
-    headers = {"Content-type": "application/json; charset=utf-8",
-               "Accept": "application/json"}
     response = None
     content = ''
+    result = do_http('POST', resource, data)
+    return result
+
+
+def do_http(method, resource, data=None):
+    """Send the given HTTP request to Jobe, return json-decoded result as
+       a dictionary (or the empty dictionary if a 204 response is given).
+    """
     result = {}
-    # Send the request
+    headers = {"Content-type": "application/json; charset=utf-8",
+               "Accept": "application/json"}
     try:
-        connect = http_request('POST', resource, data, headers)
+        connect = http_request(method, resource, data, headers)
         response = connect.getresponse()
         if response.status != 204:
             content = response.read().decode('utf8')
@@ -87,7 +95,6 @@ def run_test(language, code, filename):
             print(' Response:', response.status, response.reason, content)
         else:
             print(e)
-
     return result
 
 
@@ -114,7 +121,8 @@ def display_result(ro):
         15: 'Successful run',
         17: 'Memory limit exceeded',
         19: 'Illegal system call',
-        20: 'Internal error, please report'}
+        20: 'Internal error, please report',
+        21: 'Server overload'}
 
     code = ro['outcome']
     print("{}".format(outcomes[code]))
@@ -137,7 +145,13 @@ def display_result(ro):
 
 
 def main():
-    '''Demo a run of Python3 then C++ then Java'''
+    '''Demo or get languages, a run of Python3 then C++ then Java'''
+    print("Supported languages:")
+    resource = '/jobe/index.php/restapi/languages'
+    lang_versions = do_http('GET', resource)
+    for lang, version in lang_versions:
+        print("    {}: {}".format(lang, version))
+    print()
     print("Running python...")
     result_obj = run_test('python3', PYTHON_CODE, 'test.py')
     display_result(result_obj)

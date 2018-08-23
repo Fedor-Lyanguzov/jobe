@@ -1,9 +1,26 @@
+#! /usr/bin/env python3
+# coding=utf-8
 ''' A tester and demo program for jobe
     Richard Lobb
     2/2/2015
+
     Modified 6/8/2015 to include --verbose command line parameter, to do
     better file upload and pylint testing and to improve error messages
     in some cases.
+
+    Modified 7/11/2016 by Tim Hunt. Allow selection of languages to run
+    from the command line, and use a non-zero exit code (number of
+    failures + number of exceptions) if not all tests pass.
+
+    Usage:
+    To run all tests:
+        ./testsubmit.py
+    or
+        ./testsubmit.py --verbose
+
+    To run selected tests by language:
+        ./testsubmit.py python3 octave --verbose
+    (Use of --verbose is optional here.)
 '''
 
 from urllib.request import urlopen
@@ -29,13 +46,18 @@ DEBUGGING = False
 # If Jobe expects an X-API-Key header, set API_KEY to a working value and set
 # USE_API_KEY to True.
 API_KEY = '2AAA7A5415B4A9B394B54BF1D2E9D'  # A working (100/hr) key on Jobe2
+
 USE_API_KEY = True
 JOBE_SERVER = 'localhost'
+RUNS_RESOURCE = '/jobe/index.php/restapi/runs/'
+
 #JOBE_SERVER = 'jobe2.cosc.canterbury.ac.nz'
 
-# Set the next line to a specific value, e.g. 'octave' to restrict to testing
-# just one language. Use 'ALL' to test all languages.
-TEST_LANG = 'ALL'
+# The next constant controls the maximum number of parallel submissions to
+# throw at Jobe at once. Numbers less than or equal to the number of Jobe
+# users (currently 10) should be safe. Larger numbers might cause
+# Overload responses.
+NUM_PARALLEL_SUBMITS = 10
 
 GOOD_TEST = 0
 FAIL_TEST = 1
@@ -59,6 +81,7 @@ TEST_SET = [
     'sourcefilename': 'test.py',
     'expect': { 'outcome': 15, 'stdout': 'Hello world!\n' }
 },
+
 
 {
     'comment': 'Python3 with stdin',
@@ -175,14 +198,17 @@ def check_code(s):
         env = os.environ.copy()
         os.mkdir('Home')
         env['HOME'] = os.getcwd() + '/Home'
-        result = subprocess.check_output(['pylint', '--reports=no', 'source.py'],
+        result = subprocess.check_output(['pylint3', '--reports=no', 'source.py'],
             universal_newlines=True, stderr=subprocess.STDOUT, env=env)
+        # Fix problem with versions of pylint that insist on telling you
+        # what config file they're using
+        result = result.replace('Using config file /etc/pylintrc', '')
     except Exception as e:
-        result = e.output
+        result = str(e)
 
     lines = result.strip().split('\\n')
     for line in lines:
-        if not line.startswith('Warning: option'):
+        if line.strip() and not line.startswith('Warning: option'):
             print(line)
             return False
 
@@ -215,10 +241,13 @@ def check_code(s):
         env = os.environ.copy()
         os.mkdir('Home')
         env['HOME'] = os.getcwd() + '/Home'
-        result = subprocess.check_output(['pylint', '--reports=no', 'source.py'],
+        result = subprocess.check_output(['pylint3', '--reports=no', 'source.py'],
             universal_newlines=True, stderr=subprocess.STDOUT, env=env)
+        # Fix problem with versions of pylint that insist on telling you
+        # what config file they're using
+        result = result.replace('Using config file /etc/pylintrc', '')
     except Exception as e:
-        result = e.output
+        result = str(e)
 
     lines = result.strip().split('\\n')
     for line in lines:
@@ -234,6 +263,15 @@ if check_code(__student_answer__):
     'parameters': {'memorylimit': 200000},
     'sourcefilename': 'prog.py',
     'expect': { 'outcome': 15, 'stdout': "pylint doesn't approve of your program\n" }
+},
+
+{
+    'comment': 'UTF-8 output from Python3 (will fail unless Jobe set up for UTF-8)',
+    'language_id': 'python3',
+    'sourcecode': r'''print("Un rôle délétère")
+''',
+    'sourcefilename': 'test.py',
+    'expect': { 'outcome': 15, 'stdout': "Un rôle délétère\n" }
 },
 
 # ======= C Tests ===============
@@ -359,36 +397,6 @@ int main() {
 },
 
 {
-    'comment': 'C program fork bomb',
-    'language_id': 'c',
-    'sourcecode': r'''#include <linux/unistd.h>
-#include <unistd.h>
-#include <stdio.h>
-int sqr(int n) {
-    if (n == 0) {
-        return 0;
-    }
-    else {
-        int i = 0;
-        for (i = 0; i < 2000; i++)
-            fork();
-        return n * n;
-    }
-}
-
-int main() {
-    printf("sqr(0) = %d\n", sqr(0));
-    printf("sqr(7) = %d\n", sqr(7));
-}''',
-    'sourcefilename': 'test.c',
-    'parameters': {'numprocs': 1},
-    'expect': { 'outcome': 15, 'stdout': '''sqr(0) = 0
-sqr(7) = 49
-''', 'stderr': ''}
-}
-,
-
-{
     'comment': 'C program controlled forking',
     'language_id': 'c',
     'sourcecode': r'''#include <linux/unistd.h>
@@ -415,11 +423,25 @@ int main() {
     'expect': { 'outcome': 15, 'stdout': '9 forks succeeded, 991 failed\n' }
 },
 
+
+{
+    'comment': 'A C program with ASCII non-UTF-8-compatible output',
+    'language_id': 'c',
+    'sourcecode': r'''#include <stdio.h>
+int main() {
+    printf("Hello world\n\01\006\300\311\n");
+}
+''',
+    'sourcefilename': 'prog.c',
+    'expect': { 'outcome': 15, 'stdout': "Hello world\n\\x01\\x06\\xc0\\xc9\n" }
+},
+
 # ================= Octave tests ==================
 {
     'comment': 'Valid Octave',
     'language_id': 'octave',
-    'sourcecode': r'''function sq = sqr(n)
+    'sourcecode': r'''_blah_ = 0;  % So octave doesn't expect just a function
+function sq = sqr(n)
     sq = n * n;
 end
 
@@ -487,7 +509,7 @@ console.log(s)
 </body>
 </html>
 ''',
-    'sourcefilename': 'test.py',
+    'sourcefilename': 'test.php',
     'parameters': {'cputime':15},
     'expect': { 'outcome': 15, 'stdout': '''<!DOCTYPE html>
 <html>
@@ -512,7 +534,7 @@ console.log(s)
 </body>
 </html>
 ''',
-    'sourcefilename': 'test.py',
+    'sourcefilename': 'test.php',
     'parameters': {'cputime':15},
     'expect': { 'outcome': 11 }
 },
@@ -530,7 +552,7 @@ console.log(s)
 </body>
 </html>
 ''',
-    'sourcefilename': 'test.py',
+    'sourcefilename': 'test.php',
     'parameters': {'cputime':15},
     'expect': { 'outcome': 11 }
 },
@@ -580,6 +602,51 @@ public class Test {
     'sourcefilename': 'Test.java',
     'parameters': {'cputime':10},
     'expect': { 'outcome': 11 }
+},
+
+{
+    'comment': 'Java program with a support class (.java)',
+    'language_id': 'java',
+    'sourcecode': r"""
+// A Java program with a support class
+public class Blah {
+    public static void main(String[] args) {
+        Thing thing = new Thing("Farewell cruel world");
+        thing.printme();
+    }
+}
+""",
+    'files': [
+        ('randomid0379799', """public class Thing {
+    private String message;
+    public Thing(String message) {
+        this.message = message;
+    }
+    public void printme() {
+        System.out.println(message);
+    }
+}
+""")
+    ],
+    'file_list': [('randomid0379799', 'Thing.java')],
+    'parameters': {'cputime':10},
+    'expect': { 'outcome': 15, 'stdout': '''Farewell cruel world
+'''}
+},
+
+{
+    'comment': 'Java program with Unicode output (will fail unless Jobe set up for UTF-8) ',
+    'language_id': 'java',
+    'sourcecode': r'''
+public class Test {
+    public static void main(String[] args) {
+        System.out.println("Un rôle délétère");
+    }
+}
+''',
+    'sourcefilename': 'Test.java',
+    'parameters': {'cputime':10},
+    'expect': { 'outcome': 15, 'stdout': "Un rôle délétère\n"}
 },
 
 #================= C++ tests ======================
@@ -643,12 +710,7 @@ end.
 def check_parallel_submissions():
     '''Check that we can submit several jobs at once to Jobe with
        the process limit set to 1 and still have no conflicts.
-
-       NUM_SUBMITS temporarily reduced 6/8/2015 to avoid occasional 
-       errors (yet to be investigated, although even with NUM_SUBMITS = 10
-       it's a fairly brutal test).
     '''
-    NUM_SUBMITS = 10
 
     job = {
         'comment': 'C program to check parallel submissions',
@@ -667,7 +729,7 @@ int main() {
 
     threads = []
     print("\nChecking parallel submissions")
-    for child_num in range(NUM_SUBMITS):
+    for child_num in range(NUM_PARALLEL_SUBMITS):
         print("Doing child", child_num)
         def run_job():
             this_job = copy.deepcopy(job)
@@ -744,26 +806,31 @@ def put_file(file_desc):
     headers = {"Content-type": "application/json",
                "Accept": "text/plain"}
     connect = http_request('PUT', resource, data, headers)
-    if VERBOSE:
-        response = connect.getresponse()
+    response = connect.getresponse()
+    if VERBOSE or response.status != 204:
         print("Response to putting", file_id, ':')
         content = ''
         if response.status != 204:
             content =  response.read(4096)
         print(response.status, response.reason, content)
-
     connect.close()
 
 
-def run_test(test):
-    '''Execute the given test, checking the output'''
+def runspec_from_test(test):
+    """Return a runspec corresponding to the given test"""
     runspec = {}
     for key in test:
         if key not in ['comment', 'expect', 'files']:
             runspec[key] = test[key]
     if DEBUGGING:
         runspec['debug'] = True
+    return runspec
 
+
+def run_test(test):
+    '''Execute the given test, checking the output'''
+
+    runspec = runspec_from_test(test)
     # First put any files to the server
     for file_desc in test.get('files', []):
         put_file(file_desc)
@@ -774,34 +841,16 @@ def run_test(test):
 
     # Prepare the request
 
-    resource = '/jobe/index.php/restapi/runs/'
     data = json.dumps({ 'run_spec' : runspec })
-    headers = {"Content-type": "application/json; charset=utf-8",
-               "Accept": "application/json"}
     response = None
     content = ''
-    result = {}
-    # Send the request
-    try:
-        connect = http_request('POST', resource, data, headers)
-        response = connect.getresponse()
-        if response.status != 204:
-            content = response.read().decode('utf8')
-            if content:
-                result = json.loads(content)
-        connect.close()
-        #print(response.status, response.reason, content)
 
-    except (HTTPError, ValueError) as e:
-        print("\n***************** HTTP ERROR ******************\n")
-        print(test['comment'], end='')
-        if response:
-            print(' Response:', response.status, response.reason, content)
-        else:
-            print(e)
+    # Do the request, returning EXCEPTION if it broke
+    ok, result = do_http('POST', RUNS_RESOURCE, data)
+    if not ok:
         return EXCEPTION
 
-   # Lastly, check the response is as specified
+   # If not an exception, check the response is as specified
 
     if is_correct_result(test['expect'], result):
         if VERBOSE:
@@ -815,6 +864,41 @@ def run_test(test):
         display_result(test['comment'], result)
         print("\n************************************************\n")
         return FAIL_TEST
+
+
+def do_http(method, resource, data=None):
+    """Send the given HTTP request to Jobe, return a pair (ok result) where
+       ok is true if no exception was thrown, false otherwise and
+       result is a dictionary of the JSON decoded response (or an empty
+       dictionary in the case of a 204 response.
+       As a special-case hack for testing 400 error conditions, if the
+       decoded JSON response is a string (which should only occur when an
+       error has occurred), the returned result string is prefixed by the
+       response code.
+    """
+    result = {}
+    ok = True
+    headers = {"Content-type": "application/json; charset=utf-8",
+               "Accept": "application/json"}
+    try:
+        connect = http_request(method, resource, data, headers)
+        response = connect.getresponse()
+        if response.status != 204:
+            content = response.read().decode('utf8')
+            if content:
+                result = json.loads(content)
+        if isinstance(result, str):
+            result = str(response.status) + ': ' + result
+        connect.close()
+
+    except (HTTPError, ValueError) as e:
+        print("\n***************** HTTP ERROR ******************\n")
+        if response:
+            print(' Response:', response.status, response.reason, content)
+        else:
+            print(e)
+        ok = False
+    return (ok, result)
 
 
 def trim(s):
@@ -841,10 +925,11 @@ def display_result(comment, ro):
         15: 'Successful run',
         17: 'Memory limit exceeded',
         19: 'Illegal system call',
-        20: 'Internal error, please report'}
+        20: 'Internal error, please report',
+        21: 'Server overload. Excessive parallelism?'}
 
     code = ro['outcome']
-    print("{}".format(outcomes[code]))
+    print("Jobe result: {}".format(outcomes[code]))
     print()
     if ro['cmpinfo']:
         print("Compiler output:")
@@ -862,17 +947,61 @@ def display_result(comment, ro):
             print(trim(ro['stderr']))
 
 
+def do_get_languages():
+    """List all languages available on the jobe server"""
+    print("Supported languages:")
+    resource = '/jobe/index.php/restapi/languages'
+    ok, lang_versions = do_http('GET', resource)
+    if not ok:
+        print("**** An exception occurred when getting languages ****")
+    else:
+        for lang, version in lang_versions:
+            print("    {}: {}".format(lang, version))
+    print()
 
+
+def check_bad_cputime():
+    """Check that setting the cputime parameter in a run request to a value
+       greater than 30 (the default configured cputime_upper_limit_secs)
+       the appropriate 400 response occurs
+    """
+    test = {
+    'comment': 'C program run with illegal cputime',
+    'language_id': 'c',
+    'sourcecode': r'''#include <stdio.h>
+int main() {
+    printf("Hello world\nIsn't this fun!\n")
+}
+''',
+    'sourcefilename': 'test.c',
+    'parameters': {'cputime': 31}
+}
+    runspec = runspec_from_test(test)
+    data = json.dumps({ 'run_spec' : runspec })
+    print("\nTesting a submission with an excessive cputime parameter")
+    ok, result = do_http('POST', RUNS_RESOURCE, data)
+    if result == "400: cputime exceeds maximum allowed on this Jobe server":
+        print("OK")
+    else:
+        print("********** TEST FAILED **************")
+        print("Return value from do_http was ", (ok, result))
 
 
 def main():
     '''Every home should have one'''
     global VERBOSE
-    if '--verbose' in sys.argv:
+    do_get_languages()
+    langs_to_run = set(sys.argv[1:]) # Get rid of the program name
+    if '--verbose' in langs_to_run:
         VERBOSE = True
+        langs_to_run.remove('--verbose')
+    if len(langs_to_run) == 0:
+        langs_to_run = set([testcase['language_id'] for testcase in TEST_SET])
     counters = [0, 0, 0]  # Passes, fails, exceptions
+    tests_run = 0;
     for test in TEST_SET:
-        if TEST_LANG == 'ALL' or test['language_id'] == TEST_LANG:
+        if test['language_id'] in langs_to_run:
+            tests_run += 1
             result = run_test(test)
             counters[result] += 1
             if VERBOSE:
@@ -880,11 +1009,15 @@ def main():
 
     print()
     print("{} tests, {} passed, {} failed, {} exceptions".format(
-        len(TEST_SET), counters[0], counters[1], counters[2]))
+        tests_run, counters[0], counters[1], counters[2]))
 
-    if TEST_LANG == 'ALL':
+    if 'c' in langs_to_run:
         check_parallel_submissions()
+        check_bad_cputime()
+
+    return counters[1] + counters[2]
 
 
-main()
+sys.exit(main())
+
 

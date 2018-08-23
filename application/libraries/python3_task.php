@@ -13,32 +13,21 @@
 require_once('application/libraries/LanguageTask.php');
 
 class Python3_Task extends Task {
-    public function __construct($source, $filename, $input, $params) {
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        parent::__construct($filename, $input, $params);
         $this->default_params['interpreterargs'] = array('-BE');
     }
 
-    public static function getVersion() {
-        return 'Python 3.2';
+    public static function getVersionCommand() {
+        return array('python3 --version', '/Python ([0-9._]*)/');
     }
 
     public function compile() {
-        $outputLines = array();
-        $returnVar = 0;
-        exec("python3 -m py_compile {$this->sourceFileName} 2>compile.out", 
-                $outputLines, $returnVar);
-        if ($returnVar == 0) {
-            $this->cmpinfo = '';
-            $this->executableFileName = $this->sourceFileName;
-        }
-        else {
-            $output = implode("\n", $outputLines);
-            $compileErrs = file_get_contents('compile.out');
-            if ($output) {
-                $this->cmpinfo = $output . '\n' . $compileErrs;
-            } else {
-                $this->cmpinfo = $compileErrs;
-            }
+        $cmd = "python3 -m py_compile {$this->sourceFileName}";
+        $this->executableFileName = $this->sourceFileName;
+        list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
+        if (!empty($this->cmpinfo) && !empty($output)) {
+            $this->cmpinfo = $output . '\n' . $this->cmpinfo;
         }
     }
 
@@ -47,13 +36,13 @@ class Python3_Task extends Task {
     public function defaultFileName($sourcecode) {
         return 'prog.py';
     }
-    
+
 
     public function getExecutablePath() {
         return '/usr/bin/python3';
      }
 
-     
+
      public function getTargetFile() {
          return $this->sourceFileName;
      }

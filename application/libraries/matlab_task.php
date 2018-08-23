@@ -13,19 +13,19 @@
 require_once('application/libraries/LanguageTask.php');
 
 class Matlab_Task extends Task {
-    public function __construct($source, $filename, $input, $params) {
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        parent::__construct($filename, $input, $params);
         $this->default_params['interpreterargs'] = array(
             '-nojvm',  //  don't load the Java VM
             '-r'       //  script filename follows
         );
     }
 
-    public static function getVersion() {
-        return 'Matlab R2014b';
+    public static function getVersionCommand() {
+        return array('/usr/local/bin/matlab_exec_cli -nodisplay -nojvm -nosplash -r exit', '/\(([0-9.]*)\)/');
     }
 
-    
+
     public function compile() {
         $this->setPath();
         $filename = basename($this->sourceFileName); // Strip any path bits
@@ -67,13 +67,16 @@ class Matlab_Task extends Task {
         $lines = explode("\n", $this->stdout);
         $outlines = array();
         $headerEnded = FALSE;
+        $endOfHeader = 'Research and commercial use is prohibited.';
 
         foreach ($lines as $line) {
             $line = rtrim($line);
             if ($headerEnded) {
                 $outlines[] = $line;
-            }
-            if (strpos($line, 'Research and commercial use is prohibited.') !== FALSE) {
+            } else if (strpos($line, 'R2017b') !== FALSE) {
+                // For R2017b, need a different end-of-header line
+                $endOfHeader = 'Classroom License -- for classroom instructional use only.';
+            } else if (strpos($line, $endOfHeader) !== FALSE) {
                 $headerEnded = TRUE;
             }
         }
@@ -88,8 +91,8 @@ class Matlab_Task extends Task {
 
         return implode("\n", $outlines) . "\n";
     }
-     
-     
+
+
     // The Matlab CLI program is the executable
     public function getExecutablePath() {
         return '/usr/local/bin/matlab_exec_cli';

@@ -14,15 +14,15 @@ require_once('application/libraries/LanguageTask.php');
 
 class Pascal_Task extends Task {
 
-    public function __construct($source, $filename, $input, $params) {
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        parent::__construct($filename, $input, $params);
         $this->default_params['compileargs'] = array(
             '-vew', // [v]erbose, [e]rrors, [w]arnings
             '-Se'); // stop on first error
     }
 
-    public static function getVersion() {
-        return 'fpc-2.6.0'; // maybe something like 'fpc-' . exec('fpc -iV') to get correct version?
+    public static function getVersionCommand() {
+        return array('fpc -iV', '/([0-9._]*)/');
     }
 
     public function compile() {
@@ -30,18 +30,15 @@ class Pascal_Task extends Task {
         $errorFileName = "$src.err";
         $execFileName = "$src.exe";
         $compileargs = $this->getParam('compileargs');
-//        $cmd = "gcc " . implode(' ', $compileargs) . " -o $execFileName $src -lm 2>$errorFileName";
-        $cmd = "fpc " . implode(' ', $compileargs) . " -o$execFileName $src -Fe$errorFileName ";
-	// -Fe[filename] - store error log in file
-        exec($cmd, $output, $returnVar);
+        $cmd = "fpc " . implode(' ', $compileargs) . " -Fe$errorFileName -o$execFileName $src";
+        list($output, $stderr) = $this->run_in_sandbox($cmd);
 //	Getting not only errors, but warnings too
 	exec("grep ' Warning:\| Error:\| Fatal:' $errorFileName ", $errors, $r1);
-        if ($returnVar == 0) {
+        if (!file_exists($execFileName)) {
+            $this->cmpinfo = implode("\n", $errors);
+        } else {
             $this->cmpinfo = implode("\n", $errors);
             $this->executableFileName = $execFileName;
-        }
-        else {
-            $this->cmpinfo = implode("\n", $errors);
         }
     }
 
@@ -49,14 +46,14 @@ class Pascal_Task extends Task {
     public function defaultFileName($sourcecode) {
         return 'prog.pas';
     }
-    
-    
+
+
     // The executable is the output from the compilation
     public function getExecutablePath() {
         return "./" . $this->executableFileName;
     }
-    
-    
+
+
     public function getTargetFile() {
         return '';
     }

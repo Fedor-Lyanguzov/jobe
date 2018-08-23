@@ -13,27 +13,24 @@
 require_once('application/libraries/LanguageTask.php');
 
 class Php_Task extends Task {
-    public function __construct($source, $filename, $input, $params) {
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        parent::__construct($filename, $input, $params);
         $this->default_params['interpreterargs'] = array('--no-php-ini');
+        $this->default_params['memorylimit'] = 400; // MB (Greedy PHP)
     }
 
-    public static function getVersion() {
-        return 'PHP 5.5.9-1ubuntu4';
+    public static function getVersionCommand() {
+        return array('php --version', '/PHP ([0-9._]*)/');
     }
 
     public function compile() {
         $outputLines = array();
         $returnVar = 0;
-        exec("/usr/bin/php5 -l {$this->sourceFileName} 2>compile.out", 
-                $outputLines, $returnVar);
-        if ($returnVar == 0) {
+        list($output, $compileErrs) = $this->run_in_sandbox("/usr/bin/php -l {$this->sourceFileName}");
+        if (empty($compileErrs)) {
             $this->cmpinfo = '';
             $this->executableFileName = $this->sourceFileName;
-        }
-        else {
-            $output = implode("\n", $outputLines);
-            $compileErrs = file_get_contents('compile.out');
+        } else {
             if ($output) {
                 $this->cmpinfo = $output . '\n' . $compileErrs;
             } else {
@@ -47,13 +44,13 @@ class Php_Task extends Task {
     public function defaultFileName($sourcecode) {
         return 'prog.php';
     }
-    
-    
+
+
     public function getExecutablePath() {
-        return '/usr/bin/php5';
+        return '/usr/bin/php';
      }
-     
-     
+
+
      public function getTargetFile() {
          return $this->sourceFileName;
      }

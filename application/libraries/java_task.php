@@ -2,7 +2,7 @@
 
 /* ==============================================================
  *
- * Octabe
+ * Java
  *
  * ==============================================================
  *
@@ -13,47 +13,53 @@
 require_once('application/libraries/LanguageTask.php');
 
 class Java_Task extends Task {
-    public function __construct($source, $filename, $input, $params) {
-        // TODO: find out why java won't work with memory limit set to
-        // more plausible values.
-        $params['memorylimit'] = 0;
-        Task::__construct($source, $filename, $input, $params);
+    public function __construct($filename, $input, $params) {
+        $params['memorylimit'] = 0;    // Disregard memory limit - let JVM manage memory
+        $this->default_params['numprocs'] = 256;     // Java 8 wants lots of processes
         $this->default_params['interpreterargs'] = array(
              "-Xrs",   //  reduces usage signals by java, because that generates debug
                        //  output when program is terminated on timelimit exceeded.
              "-Xss8m",
              "-Xmx200m"
         );
-        // Superclass constructor calls subclasses to get filename if it's
+
+        if (isset($params['numprocs']) && $params['numprocs'] < 256) {
+            $params['numprocs'] = 256;  // Minimum for Java 8 JVM
+        }
+
+        parent::__construct($filename, $input, $params);
+    }
+
+    public function prepare_execution_environment($sourceCode) {
+        parent::prepare_execution_environment($sourceCode);
+
+        // Superclass calls subclasses to get filename if it's
         // not provided, so $this->sourceFileName should now be set correctly.
         $extStart = strpos($this->sourceFileName, '.');  // Start of extension
         $this->mainClassName = substr($this->sourceFileName, 0, $extStart);
     }
 
-    public static function getVersion() {
-        return 'Java 1.7';
+    public static function getVersionCommand() {
+        return array('java -version', '/version "?([0-9._]*)/');
     }
 
     public function compile() {
         $prog = file_get_contents($this->sourceFileName);
         $compileArgs = $this->getParam('compileargs');
-        $cmd = '/usr/bin/javac ' . implode(' ', $compileArgs) . " {$this->sourceFileName} 2>compile.out";
-        exec($cmd, $output, $returnVar);
-        if ($returnVar == 0) {
+        $cmd = '/usr/bin/javac ' . implode(' ', $compileArgs) . " {$this->sourceFileName}";
+        list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
+        if (empty($this->cmpinfo)) {
             $this->executableFileName = $this->sourceFileName;
-        }
-        else {
-            $this->cmpinfo .= file_get_contents('compile.out');
         }
     }
 
     // A default name for Java programs. [Called only if API-call does
-    // not provide a filename]
+    // not provide a filename. As a side effect, also set the mainClassName.
     public function defaultFileName($sourcecode) {
         $main = $this->getMainClass($sourcecode);
         if ($main === FALSE) {
             $this->cmpinfo .= "WARNING: can't determine main class, so source file has been named 'prog.java', which probably won't compile.";
-            return 'prog.java'; // This will probably fail            
+            return 'prog.java'; // This will probably fail
         } else {
             return $main.'.java';
         }
@@ -62,9 +68,9 @@ class Java_Task extends Task {
     public function getExecutablePath() {
         return '/usr/bin/java';
     }
-    
-    
-     
+
+
+
     public function getTargetFile() {
         return $this->mainClassName;
     }
@@ -85,7 +91,7 @@ class Java_Task extends Task {
         }
     }
 
-    // Get rid of the tab characters at the start of indented lines in 
+    // Get rid of the tab characters at the start of indented lines in
     // traceback output.
     public function filteredStderr() {
         return str_replace("\n\t", "\n        ", $this->stderr);
