@@ -698,6 +698,38 @@ end.
     'expect': { 'outcome': 11 }
 }
 
+#================ C# tests ====================
+{
+    'comment': 'Good Hello world C# test',
+    'language_id': 'csharp',
+    'sourcecode': r'''
+class Hello 
+{
+static void Main() 
+{
+Console.WriteLine("Hello World!");
+}
+}
+''',
+    'sourcefilename': 'prog.cs',
+    'expect': { 'outcome': 15, 'stdout': "Hello world!\n" }
+},
+
+{
+    'comment': 'Fail Hello world C# test',
+    'language_id': 'csharp',
+    'sourcecode': r'''
+class Hello 
+{
+static void Main() 
+{
+Console.WriteLine("Hello World!")
+}
+}
+''',
+    'sourcefilename': 'prog.cs',
+    'expect': { 'outcome': 11 }
+}
 ]
 
 #==========================================================================
