@@ -15,35 +15,35 @@ require_once('application/libraries/LanguageTask.php');
 class Python3_Task extends Task {
     public function __construct($filename, $input, $params) {
         parent::__construct($filename, $input, $params);
-        $this->default_params['interpreterargs'] = array('-BE');
+//        $this->default_params['interpreterargs'] = array('-BE');
     }
 
     public static function getVersionCommand() {
-        return array('python3 --version', '/Python ([0-9._]*)/');
+        return array('/usr/bin/csc /version', '/([0-9.a-z]*)/');
     }
 
     public function compile() {
-        $cmd = "python3 -m py_compile {$this->sourceFileName}";
-        $this->executableFileName = $this->sourceFileName;
+        $this->executableFileName = basename($this->sourceFileName) . '.exe';
+        $compileargs = $this->getParam('compileargs');
+        $cmd = "/usr/bin/csc " . implode(' ', $compileargs) . " {$this->sourceFileName}";
         list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
         if (!empty($this->cmpinfo) && !empty($output)) {
             $this->cmpinfo = $output . '\n' . $this->cmpinfo;
+//        list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
         }
     }
 
-
-    // A default name for Python3 programs
     public function defaultFileName($sourcecode) {
-        return 'prog.py';
+        return 'prog.cs';
     }
 
 
     public function getExecutablePath() {
-        return '/usr/bin/python3';
+        return '/usr/bin/mono';
      }
 
 
      public function getTargetFile() {
-         return $this->sourceFileName;
+         return $this->executableFileName;
      }
 };
