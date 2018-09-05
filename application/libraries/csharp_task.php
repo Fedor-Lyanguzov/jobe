@@ -12,24 +12,23 @@
 
 require_once('application/libraries/LanguageTask.php');
 
-class Python3_Task extends Task {
+class Csharp_Task extends Task {
     public function __construct($filename, $input, $params) {
+        $params['memorylimit'] = 0;    
         parent::__construct($filename, $input, $params);
-//        $this->default_params['interpreterargs'] = array('-BE');
     }
 
     public static function getVersionCommand() {
-        return array('/usr/bin/csc /version', '/([0-9.a-z]*)/');
+        return array('/usr/bin/csc /version', '/(.*) .*/');
     }
 
     public function compile() {
-        $this->executableFileName = basename($this->sourceFileName) . '.exe';
+        $this->executableFileName = basename($this->sourceFileName, '.cs') . '.exe';
         $compileargs = $this->getParam('compileargs');
-        $cmd = "/usr/bin/csc " . implode(' ', $compileargs) . " {$this->sourceFileName}";
+        $cmd = "/usr/bin/csc /nologo " . implode(' ', $compileargs) . " {$this->sourceFileName}";
         list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
-        if (!empty($this->cmpinfo) && !empty($output)) {
+        if (!empty($output)) {
             $this->cmpinfo = $output . '\n' . $this->cmpinfo;
-//        list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
         }
     }
 
