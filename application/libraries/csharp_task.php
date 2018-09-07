@@ -15,6 +15,7 @@ require_once('application/libraries/LanguageTask.php');
 class Csharp_Task extends Task {
     public function __construct($filename, $input, $params) {
         $params['memorylimit'] = 0;    
+	$params['cputime'] = 10;
         parent::__construct($filename, $input, $params);
     }
 
