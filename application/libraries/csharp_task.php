@@ -26,7 +26,8 @@ class Csharp_Task extends Task {
     public function compile() {
         $this->executableFileName = basename($this->sourceFileName, '.cs') . '.exe';
         $compileargs = $this->getParam('compileargs');
-        $cmd = "/usr/bin/csc /nologo " . implode(' ', $compileargs) . " {$this->sourceFileName}";
+        $cmd = "/usr/bin/csc /nologo /out:{$this->executableFileName} " . implode(' ', $compileargs) . " {$this->sourceFileName}";
+	log_message('error', $cmd);
         list($output, $this->cmpinfo) = $this->run_in_sandbox($cmd);
         if (!empty($output)) {
             $this->cmpinfo = $output . '\n' . $this->cmpinfo;
