@@ -18,6 +18,7 @@ class Pascal_Task extends Task {
         parent::__construct($filename, $input, $params);
         $this->default_params['compileargs'] = array(
             '-vew', // [v]erbose, [e]rrors, [w]arnings
+	    '-Mdelphi', 
             '-Se'); // stop on first error
     }
 
